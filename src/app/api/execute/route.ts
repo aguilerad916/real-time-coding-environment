@@ -41,51 +41,52 @@ export async function POST(request: NextRequest) {
 async function executeJavaScript(code: string, uniqueId: string, tempDir: string): Promise<string> {
   const filename = path.join(tempDir, `${uniqueId}.js`);
   
-  // Wrap code to capture console output
+  // Simplified wrapper that directly outputs to stdout without console.log
   const wrappedCode = `
-    const originalConsole = { 
-      log: console.log, 
-      error: console.error, 
-      warn: console.warn, 
-      info: console.info 
-    };
-    let output = "";
-    
-    console.log = (...args) => {
-      output += args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-      ).join(' ') + '\\n';
-      originalConsole.log(...args);
-    };
-    
-    console.error = (...args) => {
-      output += 'Error: ' + args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-      ).join(' ') + '\\n';
-      originalConsole.error(...args);
-    };
-    
-    console.warn = (...args) => {
-      output += 'Warning: ' + args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-      ).join(' ') + '\\n';
-      originalConsole.warn(...args);
-    };
-    
-    console.info = (...args) => {
-      output += 'Info: ' + args.map(arg => 
-        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-      ).join(' ') + '\\n';
-      originalConsole.info(...args);
-    };
-    
     try {
+      // Redirect console methods to capture output
+      const originalConsole = { 
+        log: console.log, 
+        error: console.error, 
+        warn: console.warn, 
+        info: console.info 
+      };
+      
+      let output = "";
+      
+      // Override console methods to capture output only (no original console output)
+      console.log = (...args) => {
+        output += args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        ).join(' ') + '\\n';
+      };
+      
+      console.error = (...args) => {
+        output += 'Error: ' + args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        ).join(' ') + '\\n';
+      };
+      
+      console.warn = (...args) => {
+        output += 'Warning: ' + args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        ).join(' ') + '\\n';
+      };
+      
+      console.info = (...args) => {
+        output += 'Info: ' + args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+        ).join(' ') + '\\n';
+      };
+      
+      // Execute the user's code
       ${code}
+      
+      // Output the captured content
+      process.stdout.write(output);
     } catch (error) {
-      output += 'Runtime Error: ' + error.message + '\\n';
+      process.stdout.write('Runtime Error: ' + error.message + '\\n');
     }
-    
-    process.stdout.write(output);
   `;
   
   await writeFile(filename, wrappedCode);
