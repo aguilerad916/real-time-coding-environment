@@ -32,6 +32,7 @@ export default function Home() {
         });
         
         socketRef.current.on("code-update", (newCode) => {
+          console.log("Received code-update event", newCode);
           setCode(prev => prev !== newCode ? newCode : prev);
         });
         
@@ -50,6 +51,7 @@ export default function Home() {
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
       setCode(value);
+      console.log("Emitting code-change event", { roomId, code: value });
       socketRef.current?.emit("code-change", { roomId, code: value });
     }
   };
