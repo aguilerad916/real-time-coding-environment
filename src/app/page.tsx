@@ -14,16 +14,34 @@ export default function Home() {
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    if (!roomId) return; // Don't connect until roomId is set
-    fetch("/api/socket"); // Ensure server is started
-    socketRef.current = io({ path: "/api/socket" });
-
-    socketRef.current.emit("join-room", roomId);
-
-    socketRef.current.on("code-update", (newCode) => {
-      setCode(newCode);
-    });
-
+    if (!roomId) return;
+    
+    const initializeRoom = async () => {
+      try {
+        // Get initial code state
+        const response = await fetch(`/api/room?roomId=${roomId}`);
+        const { code } = await response.json();
+        if (code) setCode(code);
+        
+        // Initialize socket connection
+        fetch("/api/socket");
+        socketRef.current = io({ path: "/api/socket" });
+        
+        socketRef.current.on("connect", () => {
+          socketRef.current?.emit("join-room", roomId);
+        });
+        
+        socketRef.current.on("code-update", (newCode) => {
+          setCode(prev => prev !== newCode ? newCode : prev);
+        });
+        
+      } catch (error) {
+        console.error("Connection error:", error);
+      }
+    };
+  
+    initializeRoom();
+  
     return () => {
       socketRef.current?.disconnect();
     };
