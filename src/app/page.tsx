@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, ChangeEvent } from "react";
 import { io, Socket } from "socket.io-client";
 import AIEnhancedEditor from "@/components/AiEnhancedEditor";
 
@@ -13,6 +13,7 @@ export default function Home() {
   const [roomId, setRoomId] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!roomId) return;
@@ -256,6 +257,60 @@ export default function Home() {
     URL.revokeObjectURL(url);
   };
 
+  // Handle file upload
+  const handleFileUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    
+    const file = files[0];
+    
+    // Check file extension
+    const fileName = file.name.toLowerCase();
+    if (!fileName.endsWith('.js') && !fileName.endsWith('.py')) {
+      setOutput("Error: Only .js and .py files are supported");
+      // Reset file input
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+    
+    // Determine language based on file extension
+    const newLanguage = fileName.endsWith('.py') ? 'python' : 'javascript';
+    setLanguage(newLanguage);
+    
+    // If switching to Python, force server-side execution
+    if (newLanguage === 'python') {
+      setExecutionMode('server');
+    }
+    
+    // Read file content
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const content = e.target?.result as string;
+      if (content) {
+        setCode(content);
+        
+        // Notify other users if in a room
+        if (roomId) {
+          socketRef.current?.emit("code-change", { roomId, code: content, language: newLanguage });
+        }
+      }
+    };
+    
+    reader.onerror = () => {
+      setOutput("Error: Failed to read the file");
+    };
+    
+    reader.readAsText(file);
+    
+    // Reset file input so the same file can be uploaded again if needed
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Trigger file input click
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -348,12 +403,30 @@ export default function Home() {
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-lg font-semibold">Output</h2>
             <div className="flex gap-2">
+              {/* Hidden file input for upload */}
+              <input 
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".js,.py"
+                className="hidden"
+              />
+              
+              {/* Upload button */}
+              <button
+                onClick={handleUploadClick}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+              >
+                Upload File
+              </button>
+              
               <button
                 onClick={downloadCode}
                 className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
               >
                 Download Code
               </button>
+              
               <button
                 onClick={executeCode}
                 disabled={isRunning}

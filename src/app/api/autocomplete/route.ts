@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 // Define the maximum context length to send to Gemini
 const MAX_CONTEXT_LENGTH = 5000;
 
+
+
 export async function POST(request: NextRequest) {
   try {
     const { code, position, language } = await request.json();
