@@ -156,6 +156,27 @@ export default function Home() {
     }
   };
 
+  const downloadCode = () => {
+    // Create a blob with the current code
+    const blob = new Blob([code], { type: 'text/javascript' });
+    
+    // Create a URL for the blob
+    const url = URL.createObjectURL(blob);
+    
+    // Create a temporary anchor element
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'code.js'; // Default filename
+    
+    // Append to the body, click, and remove
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   useEffect(() => {
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
@@ -233,13 +254,21 @@ export default function Home() {
         <div className="flex-1 flex flex-col">
           <div className="flex justify-between items-center mb-2">
             <h2 className="text-lg font-semibold">Output</h2>
-            <button
-              onClick={executeCode}
-              disabled={isRunning}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-400"
-            >
-              {isRunning ? 'Running...' : 'Run Code'}
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={downloadCode}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                Download Code
+              </button>
+              <button
+                onClick={executeCode}
+                disabled={isRunning}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-blue-400"
+              >
+                {isRunning ? 'Running...' : 'Run Code'}
+              </button>
+            </div>
           </div>
           
           <div 
