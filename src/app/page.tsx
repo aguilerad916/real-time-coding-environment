@@ -185,7 +185,7 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col p-4 md:p-6">
-      <h1 className="text-2xl font-bold mb-4">JavaScript Code Editor</h1>
+      <h1 className="text-2xl font-bold mb-4">Code Collab Editor</h1>
       {/* Add Room ID input */}
       <div className="mb-4">
         <label htmlFor="roomId" className="block text-sm font-medium mb-1">
