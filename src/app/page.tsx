@@ -1,7 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import Editor from "@monaco-editor/react";
 import { io, Socket } from "socket.io-client";
+import AIEnhancedEditor from "@/components/AiEnhancedEditor";
 
 export default function Home() {
   const [code, setCode] = useState("// Write your JavaScript code here\nconsole.log('Hello, world!');");
@@ -330,13 +330,11 @@ export default function Home() {
       
       <div className="flex flex-col lg:flex-row gap-4 flex-grow">
         <div className="flex-1 min-h-[400px] border rounded overflow-hidden">
-          <Editor
-            height="100%"
-            defaultLanguage="javascript"
-            language={language}
-            theme={theme}
+          <AIEnhancedEditor
             value={code}
             onChange={handleEditorChange}
+            language={language}
+            theme={theme}
             options={{
               minimap: { enabled: false },
               fontSize: 14,
