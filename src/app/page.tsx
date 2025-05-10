@@ -1,6 +1,7 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
 import Editor from "@monaco-editor/react";
+import { io, Socket } from "socket.io-client";
 
 export default function Home() {
   const [code, setCode] = useState("// Write your JavaScript code here\nconsole.log('Hello, world!');");
@@ -8,11 +9,30 @@ export default function Home() {
   const [output, setOutput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [executionMode, setExecutionMode] = useState<'client' | 'server'>('client');
+  const [roomId, setRoomId] = useState(""); // <-- Add this line
   const outputRef = useRef<HTMLDivElement>(null);
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    if (!roomId) return; // Don't connect until roomId is set
+    fetch("/api/socket"); // Ensure server is started
+    socketRef.current = io({ path: "/api/socket" });
+
+    socketRef.current.emit("join-room", roomId);
+
+    socketRef.current.on("code-update", (newCode) => {
+      setCode(newCode);
+    });
+
+    return () => {
+      socketRef.current?.disconnect();
+    };
+  }, [roomId]);
 
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
       setCode(value);
+      socketRef.current?.emit("code-change", { roomId, code: value });
     }
   };
 
@@ -125,6 +145,20 @@ export default function Home() {
   return (
     <main className="flex min-h-screen flex-col p-4 md:p-6">
       <h1 className="text-2xl font-bold mb-4">JavaScript Code Editor</h1>
+      {/* Add Room ID input */}
+      <div className="mb-4">
+        <label htmlFor="roomId" className="block text-sm font-medium mb-1">
+          Room ID
+        </label>
+        <input
+          id="roomId"
+          type="text"
+          value={roomId}
+          onChange={(e) => setRoomId(e.target.value)}
+          className="w-full p-2 border rounded bg-white dark:bg-gray-800 text-black dark:text-white"
+          placeholder="Enter a room ID"
+        />
+      </div>
       
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <div className="flex-1">
