@@ -1,6 +1,10 @@
+import { NextApiRequest, NextApiResponse } from 'next';
 import clientPromise from "@/lib/mongodb";
 
-export default async function handler(req: any, res: any) {
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse
+) {
   let roomId, code;
   if (req.method === "POST") {
     ({ roomId, code } = req.body);

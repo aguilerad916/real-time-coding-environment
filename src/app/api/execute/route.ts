@@ -107,7 +107,7 @@ async function executeJavaScript(code: string, uniqueId: string, tempDir: string
 // Helper function to execute shell commands with timeout
 function executeCommand(command: string, timeout: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const process = exec(command, { timeout }, (error, stdout, stderr) => {
+    exec(command, { timeout }, (error, stdout, stderr) => { // Remove 'const process ='
       if (error && error.killed) {
         reject(new Error('Execution timed out'));
       } else if (error) {
