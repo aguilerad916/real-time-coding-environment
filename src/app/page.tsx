@@ -5,11 +5,12 @@ import { io, Socket } from "socket.io-client";
 
 export default function Home() {
   const [code, setCode] = useState("// Write your JavaScript code here\nconsole.log('Hello, world!');");
+  const [language, setLanguage] = useState<'javascript' | 'python'>('javascript');
   const [theme, setTheme] = useState("vs-dark");
   const [output, setOutput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [executionMode, setExecutionMode] = useState<'client' | 'server'>('client');
-  const [roomId, setRoomId] = useState(""); // <-- Add this line
+  const [roomId, setRoomId] = useState("");
   const outputRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
 
@@ -18,11 +19,6 @@ export default function Home() {
     
     const initializeRoom = async () => {
       try {
-        // Get initial code state
-        const response = await fetch(`/api/room?roomId=${roomId}`);
-        const { code } = await response.json();
-        if (code) setCode(code);
-        
         // Initialize socket connection
         fetch("/api/socket");
         socketRef.current = io({ path: "/api/socket" });
@@ -34,6 +30,31 @@ export default function Home() {
         socketRef.current.on("code-update", (newCode) => {
           console.log("Received code-update event", newCode);
           setCode(prev => prev !== newCode ? newCode : prev);
+        });
+        
+        socketRef.current.on("language-update", (newLanguage: 'javascript' | 'python') => {
+          console.log("Received language-update event", newLanguage);
+          setLanguage(newLanguage);
+          
+          // If switching to Python, force server-side execution
+          if (newLanguage === 'python') {
+            setExecutionMode('server');
+          }
+        });
+        
+        socketRef.current.on("room-data", (data: { code: string, language: 'javascript' | 'python' }) => {
+          console.log("Received room-data event", data);
+          if (data.code) {
+            setCode(data.code);
+          }
+          if (data.language) {
+            setLanguage(data.language);
+            
+            // If switching to Python, force server-side execution
+            if (data.language === 'python') {
+              setExecutionMode('server');
+            }
+          }
         });
         
       } catch (error) {
@@ -51,8 +72,34 @@ export default function Home() {
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
       setCode(value);
-      console.log("Emitting code-change event", { roomId, code: value });
-      socketRef.current?.emit("code-change", { roomId, code: value });
+      console.log("Emitting code-change event", { roomId, code: value, language });
+      socketRef.current?.emit("code-change", { roomId, code: value, language });
+    }
+  };
+  
+  const handleLanguageChange = (newLang: 'javascript' | 'python') => {
+    setLanguage(newLang);
+    
+    // Set default code snippet based on selected language if code is empty or just the default
+    const isDefaultJsCode = code.trim() === "// Write your JavaScript code here\nconsole.log('Hello, world!');" || code.trim() === "";
+    const isDefaultPyCode = code.trim() === "# Write your Python code here\nprint('Hello, world!')" || code.trim() === "";
+    
+    if (isDefaultJsCode || isDefaultPyCode) {
+      if (newLang === 'python') {
+        setCode("# Write your Python code here\nprint('Hello, world!')");
+      } else {
+        setCode("// Write your JavaScript code here\nconsole.log('Hello, world!');");
+      }
+    }
+    
+    // Python can only run server-side
+    if (newLang === 'python') {
+      setExecutionMode('server');
+    }
+    
+    // Notify other users of language change
+    if (roomId) {
+      socketRef.current?.emit("code-change", { roomId, code, language: newLang });
     }
   };
 
@@ -61,10 +108,13 @@ export default function Home() {
     setOutput("");
     
     try {
-      if (executionMode === 'client') {
-        executeClientSide();
+      if (language === 'python') {
+        // Python code always runs server-side
+        await executePythonServerSide();
+      } else if (executionMode === 'client') {
+        executeJavaScriptClientSide();
       } else {
-        await executeServerSide();
+        await executeJavaScriptServerSide();
       }
     } catch (error) {
       setOutput(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -73,7 +123,7 @@ export default function Home() {
     }
   };
   
-  const executeClientSide = () => {
+  const executeJavaScriptClientSide = () => {
     // Create a safe execution environment
     const originalConsoleLog = console.log;
     const originalConsoleError = console.error;
@@ -116,7 +166,7 @@ export default function Home() {
     };
     
     try {
-      // Execute the code
+      // Execute the JavaScript code
       eval(code);
     } catch (error) {
       outputText += `Runtime Error: ${error instanceof Error ? error.message : String(error)}\n`;
@@ -131,7 +181,7 @@ export default function Home() {
     }
   };
   
-  const executeServerSide = async () => {
+  const executeJavaScriptServerSide = async () => {
     try {
       const response = await fetch('/api/execute', {
         method: 'POST',
@@ -146,7 +196,32 @@ export default function Home() {
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to execute code');
+        throw new Error(data.error || 'Failed to execute JavaScript code');
+      }
+      
+      // Make sure we're getting just the output string
+      setOutput(typeof data.output === 'string' ? data.output : JSON.stringify(data.output));
+    } catch (error) {
+      setOutput(`Server Error: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  
+  const executePythonServerSide = async () => {
+    try {
+      const response = await fetch('/api/execute-python', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          code,
+        }),
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to execute Python code');
       }
       
       // Make sure we're getting just the output string
@@ -157,8 +232,12 @@ export default function Home() {
   };
 
   const downloadCode = () => {
+    // Determine file extension based on language
+    const fileExtension = language === 'python' ? '.py' : '.js';
+    const mimeType = language === 'python' ? 'text/plain' : 'text/javascript';
+    
     // Create a blob with the current code
-    const blob = new Blob([code], { type: 'text/javascript' });
+    const blob = new Blob([code], { type: mimeType });
     
     // Create a URL for the blob
     const url = URL.createObjectURL(blob);
@@ -166,7 +245,7 @@ export default function Home() {
     // Create a temporary anchor element
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'code.js'; // Default filename
+    a.download = `code${fileExtension}`; // Filename with appropriate extension
     
     // Append to the body, click, and remove
     document.body.appendChild(a);
@@ -203,6 +282,21 @@ export default function Home() {
       
       <div className="flex flex-col md:flex-row gap-4 mb-4">
         <div className="flex-1">
+          <label htmlFor="language" className="block text-sm font-medium mb-1">
+            Language
+          </label>
+          <select
+            id="language"
+            value={language}
+            onChange={(e) => handleLanguageChange(e.target.value as 'javascript' | 'python')}
+            className="w-full p-2 border rounded bg-white dark:bg-gray-800 text-black dark:text-white"
+          >
+            <option value="javascript">JavaScript</option>
+            <option value="python">Python</option>
+          </select>
+        </div>
+
+        <div className="flex-1">
           <label htmlFor="theme" className="block text-sm font-medium mb-1">
             Theme
           </label>
@@ -226,9 +320,10 @@ export default function Home() {
             value={executionMode}
             onChange={(e) => setExecutionMode(e.target.value as 'client' | 'server')}
             className="w-full p-2 border rounded bg-white dark:bg-gray-800 text-black dark:text-white"
+            disabled={language === 'python'} // Disable for Python as it can only run server-side
           >
-            <option value="client">Client-side (Browser)</option>
-            <option value="server">Server-side (Node.js)</option>
+            <option value="client" disabled={language === 'python'}>Client-side (Browser)</option>
+            <option value="server">Server-side</option>
           </select>
         </div>
       </div>
@@ -238,7 +333,7 @@ export default function Home() {
           <Editor
             height="100%"
             defaultLanguage="javascript"
-            language="javascript"
+            language={language}
             theme={theme}
             value={code}
             onChange={handleEditorChange}
@@ -276,7 +371,7 @@ export default function Home() {
             className="flex-grow p-4 border rounded bg-black text-green-400 font-mono text-sm overflow-auto"
             style={{ whiteSpace: 'pre-wrap', minHeight: '400px', maxHeight: '400px' }}
           >
-            {output || 'Code output will appear here...'}
+            {output || `Code output will appear here...\n${language === 'python' ? '(Python runs server-side only)' : ''}`}
           </div>
         </div>
       </div>
