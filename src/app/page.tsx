@@ -2,6 +2,8 @@
 import { useState, useRef, useEffect, ChangeEvent } from "react";
 import { io, Socket } from "socket.io-client";
 import AIEnhancedEditor from "@/components/AiEnhancedEditor";
+import { UserIcon } from "@/components/Icons";
+import AnimatedUserCounter from "@/components/AnimatedUserCounter";
 
 export default function Home() {
   const [code, setCode] = useState("// Write your JavaScript code here\nconsole.log('Hello, world!');");
@@ -11,6 +13,9 @@ export default function Home() {
   const [isRunning, setIsRunning] = useState(false);
   const [executionMode, setExecutionMode] = useState<'client' | 'server'>('client');
   const [roomId, setRoomId] = useState("");
+  const [userCount, setUserCount] = useState(0);
+  const [isRemoteUserTyping, setIsRemoteUserTyping] = useState(false);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const outputRef = useRef<HTMLDivElement>(null);
   const socketRef = useRef<Socket | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +48,7 @@ export default function Home() {
           }
         });
         
-        socketRef.current.on("room-data", (data: { code: string, language: 'javascript' | 'python' }) => {
+        socketRef.current.on("room-data", (data: { code: string, language: 'javascript' | 'python', users: number }) => {
           console.log("Received room-data event", data);
           if (data.code) {
             setCode(data.code);
@@ -56,6 +61,22 @@ export default function Home() {
               setExecutionMode('server');
             }
           }
+          if (data.users !== undefined) {
+            setUserCount(data.users);
+          }
+        });
+        
+        // Listen for user count updates
+        socketRef.current.on("user-count", (count: number) => {
+          console.log("Received user-count event", count);
+          
+          // Just update the count without showing notifications
+          setUserCount(count);
+        });
+        
+        // Listen for typing indicator
+        socketRef.current.on("user-typing", (isTyping: boolean) => {
+          setIsRemoteUserTyping(isTyping);
         });
         
       } catch (error) {
@@ -73,8 +94,25 @@ export default function Home() {
   const handleEditorChange = (value: string | undefined) => {
     if (value !== undefined) {
       setCode(value);
-      console.log("Emitting code-change event", { roomId, code: value, language });
-      socketRef.current?.emit("code-change", { roomId, code: value, language });
+      
+      // Send code to other collaborators
+      if (roomId) {
+        console.log("Emitting code-change event", { roomId, code: value, language });
+        socketRef.current?.emit("code-change", { roomId, code: value, language });
+        
+        // Send typing indicator
+        socketRef.current?.emit("typing", { roomId, isTyping: true });
+        
+        // Clear any existing timeout
+        if (typingTimeoutRef.current) {
+          clearTimeout(typingTimeoutRef.current);
+        }
+        
+        // Set a new timeout to stop the typing indicator after 1.5 seconds of inactivity
+        typingTimeoutRef.current = setTimeout(() => {
+          socketRef.current?.emit("typing", { roomId, isTyping: false });
+        }, 1500);
+      }
     }
   };
   
@@ -319,20 +357,58 @@ export default function Home() {
 
   return (
     <main className="flex min-h-screen flex-col p-4 md:p-6">
-      <h1 className="text-2xl font-bold mb-4">Code Collab Editor</h1>
-      {/* Add Room ID input */}
+      <div className="flex justify-between items-center mb-4">
+        <h1 className="text-2xl font-bold">Code Collab Editor</h1>
+        
+        {/* User counter display */}
+        {roomId && (
+          <AnimatedUserCounter 
+            count={userCount} 
+            className="bg-gray-200 dark:bg-gray-700"
+          />
+        )}
+      </div>
+      
+      {/* Room ID input with enhanced UI */}
       <div className="mb-4">
         <label htmlFor="roomId" className="block text-sm font-medium mb-1">
           Room ID
         </label>
-        <input
-          id="roomId"
-          type="text"
-          value={roomId}
-          onChange={(e) => setRoomId(e.target.value)}
-          className="w-full p-2 border rounded bg-white dark:bg-gray-800 text-black dark:text-white"
-          placeholder="Enter a room ID"
-        />
+        <div className="flex">
+          <input
+            id="roomId"
+            type="text"
+            value={roomId}
+            onChange={(e) => setRoomId(e.target.value)}
+            className="flex-1 p-2 border rounded-l bg-white dark:bg-gray-800 text-black dark:text-white"
+            placeholder="Enter a room ID to collaborate"
+          />
+          <button
+            onClick={() => {
+              // Generate a random room ID if empty
+              if (!roomId) {
+                const newRoomId = Math.random().toString(36).substring(2, 10);
+                setRoomId(newRoomId);
+                
+                // Give time for the state to update before connecting
+                setTimeout(() => {
+                  socketRef.current?.disconnect();
+                  fetch("/api/socket");
+                  socketRef.current = io({ path: "/api/socket" });
+                  socketRef.current.emit("join-room", newRoomId);
+                }, 100);
+              }
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-r hover:bg-blue-700 transition-colors"
+          >
+            {roomId ? "Connected" : "Generate Room"}
+          </button>
+        </div>
+        {roomId && (
+          <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+            Share this Room ID with others to collaborate in real-time. {userCount > 1 ? `${userCount - 1} other ${userCount - 1 === 1 ? 'person is' : 'people are'} currently collaborating with you.` : 'No one else has joined yet.'}
+          </p>
+        )}
       </div>
       
       <div className="flex flex-col md:flex-row gap-4 mb-4">
@@ -384,7 +460,19 @@ export default function Home() {
       </div>
       
       <div className="flex flex-col lg:flex-row gap-4 flex-grow">
-        <div className="flex-1 min-h-[400px] border rounded overflow-hidden">
+        <div className="flex-1 min-h-[400px] border rounded overflow-hidden relative">
+          {/* Typing indicator */}
+          {isRemoteUserTyping && roomId && userCount > 1 && (
+            <div className="absolute bottom-4 left-4 bg-blue-100 text-blue-800 py-1 px-3 rounded-full text-xs z-10 flex items-center">
+              <span className="mr-2">Someone is typing</span>
+              <span className="flex">
+                <span className="animate-bounce mx-0.5">.</span>
+                <span className="animate-bounce mx-0.5 animation-delay-200">.</span>
+                <span className="animate-bounce mx-0.5 animation-delay-400">.</span>
+              </span>
+            </div>
+          )}
+          
           <AIEnhancedEditor
             value={code}
             onChange={handleEditorChange}
