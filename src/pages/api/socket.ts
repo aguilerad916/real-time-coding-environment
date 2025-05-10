@@ -33,7 +33,7 @@ export default function handler(req: any, res: any) {
           rooms[roomId] = { 
             code: '', 
             language: 'javascript',
-            users: 1 
+            users: 0 // Start with zero users
           };
         }
         
